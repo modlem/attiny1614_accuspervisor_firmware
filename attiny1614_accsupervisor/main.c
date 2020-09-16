@@ -18,6 +18,13 @@
 volatile uint8_t uart0_rbuf[UART_BUFLEN] = {0,};
 volatile uint16_t uart0_rbuf_wpnt = 0;
 volatile uint16_t uart0_rbuf_rpnt = 0;
+volatile uint8_t _pit_flag = 0;
+
+ISR(RTC_PIT_vect)
+{
+	RTC.PITINTFLAGS = RTC_PI_bm;
+	_pit_flag = 1;
+}
 
 ISR(USART0_RXC_vect)
 {
@@ -35,12 +42,30 @@ ISR(USART0_RXC_vect)
 	}
 }
 
+// See Microchip TB3213 - Getting Started with RTC for details
+// http://ww1.microchip.com/downloads/en/AppNotes/TB3213-Getting-Started-with-RTC-90003213A.pdf
+int RTC_init(void)
+{
+	/* Initialize RTC: */
+	while (RTC.STATUS > 0)
+	{
+		; /* Wait for all register to be synchronized */
+	}
+	
+	/* 1kHz Internal Oscillator (OSCULP32K/DIV32) */
+	RTC.CLKSEL = RTC_CLKSEL_INT1K_gc;
+	/* Run in debug: enabled */
+	RTC.DBGCTRL = RTC_DBGRUN_bm;
+	RTC.PITINTCTRL = RTC_PI_bm; /* Periodic Interrupt: enabled */
+	RTC.PITCTRLA = RTC_PERIOD_CYC1024_gc /* RTC Clock Cycles 1024 */ | RTC_PITEN_bm; /* Enable: enabled */
+	
+	return 0;
+}
+
 int USART0_init(uint32_t baud)
 {	
 	int8_t sigrow_val = SIGROW.OSC20ERR3V; // read signed error
 	int32_t baud_reg_val = 0; // ideal BAUD register value
-
-	cli();
 	
 	PORTMUX.CTRLB &= ~PORTMUX_USART0_bm;
 	PORTB.DIR &= ~PIN3_bm;
@@ -56,8 +81,6 @@ int USART0_init(uint32_t baud)
 	USART0.CTRLC = 0x0 | USART_CHSIZE_8BIT_gc;
 	// USART0.CTRLC |= USART_PMODE_ODD_gc;	// Odd parity if needed
 	USART0.DBGCTRL = 0x0;	// Halt USART IP when UPDI(JTAG) debug break is fired
-	
-	sei();
 	
 	USART0.CTRLB = 0x0 | USART_RXEN_bm | USART_TXEN_bm;
 	return 0;
@@ -94,19 +117,28 @@ void USART0_sendString(char *str)
 		USART0_sendChar(str[i], NULL);
 	}
 }
-FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
+// FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
 int main(void)
 {
+	cli();
+	RTC_init();
 	USART0_init(115200);
-	stdout = &USART_stream;
+	sei();
+	// stdout = &USART_stream;
 	
-	printf("Hello, I'm alive.\n");
     /* Replace with your application code */
     while (1)
     {
+		if(_pit_flag)
+		{
+			USART0_sendChar('t', NULL);
+			_pit_flag = 0;
+		}
+		
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
 		{
-			USART0_sendChar(uart0_rbuf[uart0_rbuf_rpnt++], NULL);
+			// TODO: put data into protocol parser
+			//uart0_rbuf[uart0_rbuf_rpnt++]
 			if(uart0_rbuf_rpnt >= UART_BUFLEN) uart0_rbuf_rpnt = 0;
 		}
     }
