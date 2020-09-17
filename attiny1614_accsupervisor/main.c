@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <avr/interrupt.h>
+#include <avr/sleep.h>
 
 // See Microchip TB3216 - Getting Started with USART for details
 // http://ww1.microchip.com/downloads/en/AppNotes/TB3216-Getting-Started-with-USART-90003216A.pdf
@@ -18,12 +19,10 @@
 volatile uint8_t uart0_rbuf[UART_BUFLEN] = {0,};
 volatile uint16_t uart0_rbuf_wpnt = 0;
 volatile uint16_t uart0_rbuf_rpnt = 0;
-volatile uint8_t _pit_flag = 0;
 
 ISR(RTC_PIT_vect)
 {
 	RTC.PITINTFLAGS = RTC_PI_bm;
-	_pit_flag = 1;
 }
 
 ISR(USART0_RXC_vect)
@@ -61,6 +60,12 @@ int RTC_init(void)
 	
 	return 0;
 }
+
+void SLPCTRL_init(void)
+{
+	SLPCTRL.CTRLA |= SLPCTRL_SMODE_PDOWN_gc;
+	SLPCTRL.CTRLA |= SLPCTRL_SEN_bm;
+}
 
 int USART0_init(uint32_t baud)
 {	
@@ -105,7 +110,9 @@ int USART0_sendChar(char c, struct __file *notused)
 	{
 		;
 	}
+	USART0.STATUS |= USART_TXCIF_bm;
 	USART0.TXDATAL = c;
+	while(!(USART0.STATUS & USART_TXCIF_bm));
 	
 	return 0;
 }
@@ -117,23 +124,18 @@ void USART0_sendString(char *str)
 		USART0_sendChar(str[i], NULL);
 	}
 }
-// FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
 int main(void)
 {
 	cli();
 	RTC_init();
+	SLPCTRL_init();
 	USART0_init(115200);
 	sei();
-	// stdout = &USART_stream;
 	
     /* Replace with your application code */
     while (1)
     {
-		if(_pit_flag)
-		{
-			USART0_sendChar('t', NULL);
-			_pit_flag = 0;
-		}
+		USART0_sendChar('s', NULL);
 		
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
 		{
@@ -141,6 +143,7 @@ int main(void)
 			//uart0_rbuf[uart0_rbuf_rpnt++]
 			if(uart0_rbuf_rpnt >= UART_BUFLEN) uart0_rbuf_rpnt = 0;
 		}
+		sleep_cpu();
     }
 }
 
