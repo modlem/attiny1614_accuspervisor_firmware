@@ -20,6 +20,10 @@ volatile uint8_t uart0_rbuf[UART_BUFLEN] = {0,};
 volatile uint16_t uart0_rbuf_wpnt = 0;
 volatile uint16_t uart0_rbuf_rpnt = 0;
 
+static uint8_t _gpio_status = 0;
+#define GPIO_RELAY_MASK	0x1
+#define GPIO_ADC_MASK	0x2
+
 ISR(RTC_PIT_vect)
 {
 	RTC.PITINTFLAGS = RTC_PI_bm;
@@ -61,11 +65,20 @@ int RTC_init(void)
 	return 0;
 }
 
-void SLPCTRL_init(void)
+int SLPCTRL_init(void)
 {
 	SLPCTRL.CTRLA |= SLPCTRL_SMODE_PDOWN_gc;
 	SLPCTRL.CTRLA |= SLPCTRL_SEN_bm;
+	
+	return 0;
 }
+int GPIO_init(void)
+{
+	PORTA.DIR |= PIN3_bm;	// ADC enabler
+	PORTB.DIR |= PIN1_bm;	// Relay
+	
+	return 0;
+}
 
 int USART0_init(uint32_t baud)
 {	
@@ -124,11 +137,46 @@ void USART0_sendString(char *str)
 		USART0_sendChar(str[i], NULL);
 	}
 }
+void relayOn()
+{
+	_gpio_status |= GPIO_RELAY_MASK;
+	PORTB.OUTSET |= PIN1_bm;
+}
+
+void relayOff()
+{
+	_gpio_status &= ~GPIO_RELAY_MASK;
+	PORTB.OUTCLR |= PIN1_bm;
+}
+
+void adcOn()
+{
+	_gpio_status |= GPIO_ADC_MASK;
+	PORTA.OUTSET |= PIN3_bm;
+}
+
+void adcOff()
+{
+	_gpio_status &= ~GPIO_ADC_MASK;
+	PORTA.OUTCLR |= PIN3_bm;
+}
+
+int isRelayOn()
+{
+	return _gpio_status & GPIO_RELAY_MASK;
+}
+
+int isAdcOn()
+{
+	return _gpio_status & GPIO_ADC_MASK;
+}
+
 int main(void)
 {
 	cli();
 	RTC_init();
 	SLPCTRL_init();
+	GPIO_init();
 	USART0_init(115200);
 	sei();
 	
@@ -136,6 +184,11 @@ int main(void)
     while (1)
     {
 		USART0_sendChar('s', NULL);
+		
+		if(isRelayOn()) relayOff();
+		else relayOn();
+		if(isAdcOn()) adcOff();
+		else adcOn();
 		
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
 		{
