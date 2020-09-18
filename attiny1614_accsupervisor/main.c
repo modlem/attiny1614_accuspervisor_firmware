@@ -171,6 +171,7 @@ int isAdcOn()
 	return _gpio_status & GPIO_ADC_MASK;
 }
 
+FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
 int main(void)
 {
 	cli();
@@ -179,16 +180,32 @@ int main(void)
 	GPIO_init();
 	USART0_init(115200);
 	sei();
+	stdout = &USART_stream;
 	
     /* Replace with your application code */
     while (1)
     {
-		USART0_sendChar('s', NULL);
-		
-		if(isRelayOn()) relayOff();
-		else relayOn();
-		if(isAdcOn()) adcOff();
-		else adcOn();
+		printf("Relay / ADC: ");
+		if(isRelayOn())
+		{
+			printf("Off / ");
+			relayOff();
+		}
+		else
+		{
+			printf("On / ");
+			relayOn();
+		}
+		if(isAdcOn())
+		{
+			printf("Off\r\n");
+			adcOff();
+		}
+		else
+		{
+			printf("On\r\n");
+			adcOn();
+		}
 		
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
 		{
