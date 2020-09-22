@@ -24,6 +24,9 @@ static uint8_t _gpio_status = 0;
 #define GPIO_RELAY_MASK	0x1
 #define GPIO_ADC_MASK	0x2
 
+// Actual voltage is {vbat/vacc}_volt * 0.01787109375
+// Due to the lack of 32bit multiplication capability,...
+// ...we have to send the raw values and let the counterpart(TX2) do the math.
 uint16_t vbat_volt = 0;
 uint16_t vacc_volt = 0;
 uint8_t adc_state = 0;
@@ -66,8 +69,7 @@ int RTC_init(void)
 	/* Run in debug: enabled */
 	RTC.DBGCTRL = RTC_DBGRUN_bm;
 	RTC.PITINTCTRL = RTC_PI_bm; /* Periodic Interrupt: enabled */
-	// 21SEP20 Jason: Changed to 8192 just for checking - apx. 8sec. Back to 1024 after done the things.
-	RTC.PITCTRLA = RTC_PERIOD_CYC8192_gc /* RTC Clock Cycles 1024 */ | RTC_PITEN_bm; /* Enable: enabled */
+	RTC.PITCTRLA = RTC_PERIOD_CYC1024_gc /* RTC Clock Cycles 1024 */ | RTC_PITEN_bm; /* Enable: enabled */
 	
 	return 0;
 }
@@ -260,6 +262,8 @@ int main(void)
 	
 	sleep_requested = 0;
 	adcOn();
+	
+	// Static scheduling loop
     while (1)
     {
 		doAdcThings();
@@ -269,29 +273,7 @@ int main(void)
 			adc_state = 0;
 			sleep_requested = 1;
 		}
-		
-		/*printf("Relay / ADC: ");
-		if(isRelayOn())
-		{
-			printf("Off / ");
-			relayOff();
-		}
-		else
-		{
-			printf("On / ");
-			relayOn();
-		}
-		if(isAdcOn())
-		{
-			printf("Off\r\n");
-			adcOff();
-		}
-		else
-		{
-			printf("On\r\n");
-			adcOn();
-		}*/
-		
+
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
 		{
 			// TODO: put data into protocol parser
