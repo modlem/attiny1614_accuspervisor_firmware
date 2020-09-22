@@ -24,6 +24,12 @@ static uint8_t _gpio_status = 0;
 #define GPIO_RELAY_MASK	0x1
 #define GPIO_ADC_MASK	0x2
 
+uint16_t vbat_volt = 0;
+uint16_t vacc_volt = 0;
+uint8_t adc_state = 0;
+
+volatile uint8_t sleep_requested = 1;
+
 ISR(RTC_PIT_vect)
 {
 	RTC.PITINTFLAGS = RTC_PI_bm;
@@ -60,7 +66,8 @@ int RTC_init(void)
 	/* Run in debug: enabled */
 	RTC.DBGCTRL = RTC_DBGRUN_bm;
 	RTC.PITINTCTRL = RTC_PI_bm; /* Periodic Interrupt: enabled */
-	RTC.PITCTRLA = RTC_PERIOD_CYC1024_gc /* RTC Clock Cycles 1024 */ | RTC_PITEN_bm; /* Enable: enabled */
+	// 21SEP20 Jason: Changed to 8192 just for checking - apx. 8sec. Back to 1024 after done the things.
+	RTC.PITCTRLA = RTC_PERIOD_CYC8192_gc /* RTC Clock Cycles 1024 */ | RTC_PITEN_bm; /* Enable: enabled */
 	
 	return 0;
 }
@@ -171,21 +178,99 @@ int isAdcOn()
 	return _gpio_status & GPIO_ADC_MASK;
 }
 
-FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
+int ADC_init(void)
+{
+	// No inversion, no pull-up, no int., dig. buffer disable on PA1 and PA2.
+	PORTA.PIN1CTRL &= ~PORT_ISC_gm;
+	PORTA.PIN2CTRL &= ~PORT_ISC_gm;
+	PORTA.PIN1CTRL |= PORT_ISC_INPUT_DISABLE_gc;
+	PORTA.PIN2CTRL |= PORT_ISC_INPUT_DISABLE_gc;
+	
+	// No run in standby, full 10-bit resolution, no freerun, enable.
+	ADC0.CTRLA = (1 & ADC_ENABLE_bm);
+	// No accumulation. Max. value will be 0x3FF (max. of 10-bit)
+	ADC0.CTRLB = ADC_SAMPNUM_ACC1_gc;
+	// Big sample cap., VDD ref., DIV256 prescaler.
+	// Ya, I know. It's an overkill. Better than going under.
+	ADC0.CTRLC = ADC_REFSEL_VDDREF_gc | ADC_PRESC_DIV256_gc;
+	// 256clk startup delay, no auto sample delay, no delay between samples.
+	ADC0.CTRLD = ADC_INITDLY_DLY256_gc;
+	// No window comp.
+	ADC0.CTRLE = ADC_WINCM_NONE_gc;
+	// 0 sample len.
+	ADC0.SAMPCTRL = (0 & ADC_SAMPLEN_gm);
+	// Not using evt. control
+	ADC0.EVCTRL = (0 & ADC_STARTEI_bm);
+	// Not using int. control
+	ADC0.INTCTRL = (0 & ADC_WCMP_bm) | (0 & ADC_RESRDY_bm);
+	// Clearing possible previous int. flags
+	ADC0.INTFLAGS = (1 & ADC_WCMP_bm) | (1 & ADC_RESRDY_bm);
+	// Halting the peripheral in debug halt
+	ADC0.DBGCTRL = (0 & ADC_DBGRUN_bm);
+	
+	return 0;
+}
+
+void doAdcThings()
+{
+	if((ADC0.COMMAND & ADC_STCONV_bm) == 0)
+	{
+		if(ADC0.INTFLAGS & ADC_RESRDY_bm)
+		{
+			// Something has been done from previous conversion.
+			if((ADC0.MUXPOS & ADC_MUXPOS_gm) == ADC_MUXPOS_AIN1_gc)
+			{
+				// VBAT
+				vbat_volt = ADC0.RES;
+				adc_state |= 0x1;
+			}
+			if((ADC0.MUXPOS & ADC_MUXPOS_gm) == ADC_MUXPOS_AIN2_gc)
+			{
+				// VACC
+				vacc_volt = ADC0.RES;
+				adc_state |= 0x2;
+			}
+			ADC0.INTFLAGS = (1 & ADC_RESRDY_bm);
+		}
+		
+		if((ADC0.MUXPOS & ADC_MUXPOS_gm) == ADC_MUXPOS_AIN1_gc)
+		{
+			ADC0.MUXPOS = ADC_MUXPOS_AIN2_gc;
+		}
+		else
+		{
+			ADC0.MUXPOS = ADC_MUXPOS_AIN1_gc;
+		}
+		ADC0.COMMAND = (1 & ADC_STCONV_bm);
+	}
+}
+
 int main(void)
 {
+	FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
+	
 	cli();
 	RTC_init();
 	SLPCTRL_init();
 	GPIO_init();
 	USART0_init(115200);
+	ADC_init();
 	sei();
 	stdout = &USART_stream;
 	
-    /* Replace with your application code */
+	sleep_requested = 0;
+	adcOn();
     while (1)
     {
-		printf("Relay / ADC: ");
+		doAdcThings();
+		if((adc_state & 0x3) == 0x3)
+		{
+			printf("VBAT: %d, VACC: %d\r\n", vbat_volt, vacc_volt);
+			adc_state = 0;
+			sleep_requested = 1;
+		}
+		
+		/*printf("Relay / ADC: ");
 		if(isRelayOn())
 		{
 			printf("Off / ");
@@ -205,7 +290,7 @@ int main(void)
 		{
 			printf("On\r\n");
 			adcOn();
-		}
+		}*/
 		
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
 		{
@@ -213,7 +298,14 @@ int main(void)
 			//uart0_rbuf[uart0_rbuf_rpnt++]
 			if(uart0_rbuf_rpnt >= UART_BUFLEN) uart0_rbuf_rpnt = 0;
 		}
-		sleep_cpu();
+		
+		if(sleep_requested)
+		{
+			adcOff();
+			sleep_cpu();
+			sleep_requested = 0;
+			adcOn();
+		}
     }
 }
 
