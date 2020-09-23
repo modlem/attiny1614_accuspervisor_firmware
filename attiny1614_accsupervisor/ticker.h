@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-inline void incTick(void);
+void incTick(void);
 uint8_t getCurrentTick(void);
 uint8_t getDelta(uint8_t oldone, uint8_t newone);
 uint8_t getDelta_current(uint8_t old);

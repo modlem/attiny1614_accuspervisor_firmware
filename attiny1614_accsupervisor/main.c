@@ -32,20 +32,20 @@ static uint8_t _gpio_status = 0;
 // ...we have to send the raw values and let the counterpart(TX2) do the math.
 uint16_t vbat_volt = 0;
 uint16_t vacc_volt = 0;
-//uint8_t adc_state = 0;
+uint8_t adc_state = 0;
 // Low battery cut-off threshold, default: 10.5v (588)
 uint16_t vbat_threshold = 588;
 // Accessory power detection threshold, default: 10.5v (588)
 uint16_t vacc_threshold = 588;
-// Accessory power cutoff holding time, default: 3 ticks
-uint8_t vacc_cutoff_hold = 3;
 
+volatile uint8_t tx2_timeout = 10;
 volatile uint8_t sleep_requested = 1;
 
 ISR(RTC_PIT_vect)
 {
 	RTC.PITINTFLAGS = RTC_PI_bm;
 	incTick();
+	if(tx2_timeout > 0) tx2_timeout--;
 }
 
 ISR(USART0_RXC_vect)
@@ -166,6 +166,7 @@ void relayOn()
 {
 	_gpio_status |= GPIO_RELAY_MASK;
 	PORTB.OUTSET |= PIN1_bm;
+	tx2_timeout = 10;
 }
 
 void relayOff()
@@ -240,13 +241,13 @@ void doAdcThings()
 			{
 				// VBAT
 				vbat_volt = ADC0.RES;
-				//adc_state |= 0x1;
+				adc_state |= 0x1;
 			}
 			if((ADC0.MUXPOS & ADC_MUXPOS_gm) == ADC_MUXPOS_AIN2_gc)
 			{
 				// VACC
 				vacc_volt = ADC0.RES;
-				//adc_state |= 0x2;
+				adc_state |= 0x2;
 			}
 			ADC0.INTFLAGS = (1 & ADC_RESRDY_bm);
 		}
@@ -267,27 +268,23 @@ void doSwitchingThings(void)
 {
 	if(isRelayOn())
 	{
-		// Off logics
-		;
+		if(vacc_volt < vacc_threshold)
+		{
+			if(tx2_timeout == 0) relayOff();
+		}
 	}
 	else
 	{
-		// On logics
-		
 		// Relay is always on if the accessory power presents
 		if(vacc_volt >= vacc_threshold) relayOn();
 	}
 }
 
-void doTx2CmdThings(void)
-{
-	// a) BAT is okay & accessory is off -> Send 'Backup' command
-	// b) BAT is nokay & accessory is off -> Send 'Halt' command
-}
-
 int main(void)
 {
 	//FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
+	uint8_t oldTick = 0;
+	uint8_t currentTick;
 	
 	cli();
 	RTC_init();
@@ -305,12 +302,31 @@ int main(void)
 	sleep_requested = 0;
 	adcOn();
 	
+	// Surveying voltages for the first time:
+	while((adc_state & 0x3) != 0x3)
+	{
+		doAdcThings();
+	}
+	adc_state = 0;
+	
 	// Static scheduling loop
-	// TODO: Scheduling. Consider UART parser
     while (1)
     {
+		currentTick = getCurrentTick();
+		if(isRelayOn() && oldTick != currentTick)
+		{
+			tx2_timeout = 10;
+			sendCmd(CMD_HELLO, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
+			oldTick = currentTick;
+			sleep_requested = 0;
+		}
+		
 		doAdcThings();
-		doTx2CmdThings();
+		if((adc_state & 0x3) == 0x3)
+		{
+			adc_state = 0;
+			if(isRelayOn() == 0) sleep_requested = 1;
+		}
 
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
 		{

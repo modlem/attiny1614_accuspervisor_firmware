@@ -6,3 +6,5 @@ main.c
 
 protocol8086.c
 
+ticker.c
+

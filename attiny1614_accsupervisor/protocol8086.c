@@ -33,6 +33,7 @@ void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint
 {
 	extern uint16_t vbat_volt;
 	extern uint16_t vacc_volt;
+	extern volatile uint8_t tx2_timeout;
 	uint8_t sendBuf[8] = {0,};
 
 	if(parseDoneCallBack != NULL) parseDoneCallBack(data1, data2, data3, data4, data5);
@@ -40,6 +41,7 @@ void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint
 	{
 		/* Default Command Behaviour Parser */
 #if _ROLE == PWR_MONITOR
+		tx2_timeout = 10;
 		switch(data1)
 		{
 		case CMD_HELLO:
