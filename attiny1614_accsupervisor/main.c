@@ -11,6 +11,8 @@
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 
+#include "protocol8086.h"
+
 // See Microchip TB3216 - Getting Started with USART for details
 // http://ww1.microchip.com/downloads/en/AppNotes/TB3216-Getting-Started-with-USART-90003216A.pdf
 // Peri.clock: 3.3MHz for 20MHz sys.clock, 2.6MHz for 16MHz sys.
@@ -249,7 +251,7 @@ void doAdcThings()
 
 int main(void)
 {
-	FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
+	//FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
 	
 	cli();
 	RTC_init();
@@ -258,8 +260,12 @@ int main(void)
 	USART0_init(115200);
 	ADC_init();
 	sei();
-	stdout = &USART_stream;
-	
+	// Protocol8086 parser in working
+	//stdout = &USART_stream;
+	parserInit();
+	// TODO: appropriate functions
+	setParseDoneCallback(NULL);
+	setUartSendFunc(NULL);
 	sleep_requested = 0;
 	adcOn();
 	
@@ -276,8 +282,7 @@ int main(void)
 
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
 		{
-			// TODO: put data into protocol parser
-			//uart0_rbuf[uart0_rbuf_rpnt++]
+			parseData(uart0_rbuf[uart0_rbuf_rpnt++]);
 			if(uart0_rbuf_rpnt >= UART_BUFLEN) uart0_rbuf_rpnt = 0;
 		}
 		
