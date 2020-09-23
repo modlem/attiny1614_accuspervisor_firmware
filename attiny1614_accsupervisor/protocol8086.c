@@ -5,9 +5,11 @@
  *  Author: Jinsan Kwon
  */ 
 
-#include <protocol8086.h>
+#include "protocol8086.h"
 #include <stdint.h>
 #include <stddef.h>
+
+#define _ROLE	PWR_MONITOR
 
 static enum UART_STATE uartState;
 static void (*parseDoneCallBack)(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint8_t data5) = NULL;
@@ -29,35 +31,30 @@ void _encapsulateData(uint8_t *buf8, uint8_t one, uint8_t two, uint8_t three, ui
 
 void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint8_t data5)
 {
-	extern uint8_t adcStatus;
-	extern uint32_t adc_vbat;
-	extern uint32_t adc_vacc;
+	extern uint16_t vbat_volt;
+	extern uint16_t vacc_volt;
 	uint8_t sendBuf[8] = {0,};
 
 	if(parseDoneCallBack != NULL) parseDoneCallBack(data1, data2, data3, data4, data5);
 	else
 	{
 		/* Default Command Behaviour Parser */
+#if _ROLE == PWR_MONITOR
 		switch(data1)
 		{
 		case CMD_HELLO:
-			_encapsulateData(sendBuf, CMD_HELLO2, PWR_MONITOR, 0, 0, 0);
+			_encapsulateData(sendBuf, CMD_HELLO2, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
 			if(uartSend != NULL) uartSend(sendBuf, 8);
 			break;
 		case CMD_HELLO2:
 			break;
 		case CMD_PING:
-			_encapsulateData(sendBuf, CMD_PONG, PWR_MONITOR, 0, 0, 0);
+			_encapsulateData(sendBuf, CMD_PONG, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
 			if(uartSend != NULL) uartSend(sendBuf, 8);
 			break;
 		case CMD_PONG:
 			break;
 		case CMD_BKUP:
-			if(data2 == DVR_RECORDER && data3 == 1)
-			{
-				// cmd_state = CMD_BKUP_GOT;
-				;
-			}
 			break;
 		case CMD_BKOK:
 			break;
@@ -66,7 +63,7 @@ void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint
 		case CMD_HTOK:
 			break;
 		case CMD_STAT:
-			_encapsulateData(sendBuf, CMD_STAT_RSP, PWR_MONITOR, adcStatus, (uint8_t)(adc_vbat * 183 / 4096), (uint8_t)(adc_vacc * 183 / 4096));
+			_encapsulateData(sendBuf, CMD_STAT_RSP, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
 			if(uartSend != NULL) uartSend(sendBuf, 8);
 			break;
 		case CMD_STAT_RSP:
@@ -74,6 +71,9 @@ void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint
 		default:
 			break;
 		}
+#elif _ROLE == DVR_RECORDER
+#else
+#endif
 	}
 }
 

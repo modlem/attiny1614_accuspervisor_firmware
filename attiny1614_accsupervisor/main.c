@@ -12,6 +12,7 @@
 #include <avr/sleep.h>
 
 #include "protocol8086.h"
+#include "ticker.h"
 
 // See Microchip TB3216 - Getting Started with USART for details
 // http://ww1.microchip.com/downloads/en/AppNotes/TB3216-Getting-Started-with-USART-90003216A.pdf
@@ -38,6 +39,7 @@ volatile uint8_t sleep_requested = 1;
 ISR(RTC_PIT_vect)
 {
 	RTC.PITINTFLAGS = RTC_PI_bm;
+	incTick();
 }
 
 ISR(USART0_RXC_vect)
@@ -141,9 +143,15 @@ int USART0_sendChar(char c, struct __file *notused)
 	return 0;
 }
 
-void USART0_sendString(char *str)
+void USART0_sendStringSz(char *str)
 {
 	for(size_t i = 0; i < strlen(str); i++)
+	{
+		USART0_sendChar(str[i], NULL);
+	}
+}void USART0_sendBuf(uint8_t *str, uint8_t len)
+{
+	for(size_t i = 0; i < len; i++)
 	{
 		USART0_sendChar(str[i], NULL);
 	}
@@ -263,9 +271,9 @@ int main(void)
 	// Protocol8086 parser in working
 	//stdout = &USART_stream;
 	parserInit();
-	// TODO: appropriate functions
 	setParseDoneCallback(NULL);
-	setUartSendFunc(NULL);
+	setUartSendFunc(USART0_sendBuf);
+	
 	sleep_requested = 0;
 	adcOn();
 	
@@ -275,6 +283,7 @@ int main(void)
 		doAdcThings();
 		if((adc_state & 0x3) == 0x3)
 		{
+			// TODO: Scheduling. Consider UART parser
 			printf("VBAT: %d, VACC: %d\r\n", vbat_volt, vacc_volt);
 			adc_state = 0;
 			sleep_requested = 1;
