@@ -11,6 +11,7 @@
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 
+#include "definitions.h"
 #include "protocol8086.h"
 #include "ticker.h"
 
@@ -38,8 +39,8 @@ uint16_t vbat_threshold = 588;
 // Accessory power detection threshold, default: 10.5v (588)
 uint16_t vacc_threshold = 588;
 
-volatile uint8_t tx2_timeout = 10;
-volatile uint8_t sleep_requested = 1;
+volatile uint8_t tx2_timeout = 30;
+uint8_t pending_sleep_flag = 0 & PENDING_SLEEP_MASK;
 
 ISR(RTC_PIT_vect)
 {
@@ -232,6 +233,7 @@ int ADC_init(void)
 
 void doAdcThings()
 {
+	pending_sleep_flag |= PENDING_SLEEP_ADC;
 	if((ADC0.COMMAND & ADC_STCONV_bm) == 0)
 	{
 		if(ADC0.INTFLAGS & ADC_RESRDY_bm)
@@ -268,7 +270,7 @@ void doSwitchingThings(void)
 {
 	if(isRelayOn())
 	{
-		if(vacc_volt < vacc_threshold)
+		if(vacc_volt < vacc_threshold || vbat_volt < vbat_threshold)
 		{
 			if(tx2_timeout == 0) relayOff();
 		}
@@ -283,7 +285,7 @@ void doSwitchingThings(void)
 int main(void)
 {
 	//FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
-	uint8_t oldTick = 0;
+	uint8_t oldTick = 255;
 	uint8_t currentTick;
 	
 	cli();
@@ -293,39 +295,35 @@ int main(void)
 	USART0_init(115200);
 	ADC_init();
 	sei();
-	// Protocol8086 parser in working
+	// Protocol8086 parser in action
 	//stdout = &USART_stream;
 	parserInit();
 	setParseDoneCallback(NULL);
 	setUartSendFunc(USART0_sendBuf);
 	
-	sleep_requested = 0;
+	pending_sleep_flag = 0 & PENDING_SLEEP_MASK;
 	adcOn();
-	
-	// Surveying voltages for the first time:
-	while((adc_state & 0x3) != 0x3)
-	{
-		doAdcThings();
-	}
-	adc_state = 0;
-	
+
 	// Static scheduling loop
     while (1)
     {
 		currentTick = getCurrentTick();
-		if(isRelayOn() && oldTick != currentTick)
+		if(oldTick != currentTick)
 		{
-			tx2_timeout = 10;
-			sendCmd(CMD_HELLO, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
 			oldTick = currentTick;
-			sleep_requested = 0;
+			if(isRelayOn())
+			{
+				sendCmd(CMD_HELLO, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
+				pending_sleep_flag |= PENDING_SLEEP_UART;
+			}
 		}
 		
 		doAdcThings();
 		if((adc_state & 0x3) == 0x3)
 		{
 			adc_state = 0;
-			if(isRelayOn() == 0) sleep_requested = 1;
+			doSwitchingThings();
+			pending_sleep_flag &= ~PENDING_SLEEP_ADC;
 		}
 
 		if(uart0_rbuf_rpnt != uart0_rbuf_wpnt)
@@ -334,11 +332,10 @@ int main(void)
 			if(uart0_rbuf_rpnt >= UART_BUFLEN) uart0_rbuf_rpnt = 0;
 		}
 		
-		if(sleep_requested)
+		if((pending_sleep_flag & PENDING_SLEEP_MASK) == 0)
 		{
 			adcOff();
 			sleep_cpu();
-			sleep_requested = 0;
 			adcOn();
 		}
     }

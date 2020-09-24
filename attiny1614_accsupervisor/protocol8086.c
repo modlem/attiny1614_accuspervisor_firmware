@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "definitions.h"
+
 #define _ROLE	PWR_MONITOR
 
 static enum UART_STATE uartState;
@@ -31,9 +33,14 @@ void _encapsulateData(uint8_t *buf8, uint8_t one, uint8_t two, uint8_t three, ui
 
 void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint8_t data5)
 {
+	static uint8_t _dont_sleep = 0;
+	
 	extern uint16_t vbat_volt;
 	extern uint16_t vacc_volt;
+	extern uint16_t vbat_threshold;
+	extern uint16_t vacc_threshold;
 	extern volatile uint8_t tx2_timeout;
+	extern uint8_t pending_sleep_flag;
 	uint8_t sendBuf[8] = {0,};
 
 	if(parseDoneCallBack != NULL) parseDoneCallBack(data1, data2, data3, data4, data5);
@@ -41,7 +48,7 @@ void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint
 	{
 		/* Default Command Behaviour Parser */
 #if _ROLE == PWR_MONITOR
-		tx2_timeout = 10;
+		tx2_timeout = 30;
 		switch(data1)
 		{
 		case CMD_HELLO:
@@ -70,8 +77,47 @@ void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint
 			break;
 		case CMD_STAT_RSP:
 			break;
+		case CMD_GET_THRESH:
+			_encapsulateData(sendBuf, CMD_GET_THRESH_RSP, (uint8_t)((vbat_threshold >> 8) & 0xFF), (uint8_t)(vbat_threshold & 0xFF), (uint8_t)((vacc_threshold >> 8) & 0xFF), (uint8_t)(vacc_threshold & 0xFF));
+			if(uartSend != NULL) uartSend(sendBuf, 8);
+			break;
+		case CMD_GET_THRESH_RSP:
+			break;
+		case CMD_SET_THRESH:
+			vbat_threshold = ((uint16_t)data2) << 8;
+			vbat_threshold += data3;
+			vacc_threshold = ((uint16_t)data4) << 8;
+			vacc_threshold += data5;
+			_encapsulateData(sendBuf, CMD_SET_THRESH_RSP, (uint8_t)((vbat_threshold >> 8) & 0xFF), (uint8_t)(vbat_threshold & 0xFF), (uint8_t)((vacc_threshold >> 8) & 0xFF), (uint8_t)(vacc_threshold & 0xFF));
+			if(uartSend != NULL) uartSend(sendBuf, 8);
+			break;
+		case CMD_SET_THRESH_RSP:
+			break;
+		case CMD_DONT_SLEEP:
+			_dont_sleep = 1;
+			_encapsulateData(sendBuf, CMD_DONT_SLEEP_RSP, _dont_sleep, 0, 0, 0);
+			if(uartSend != NULL) uartSend(sendBuf, 8);
+			break;
+		case CMD_DONT_SLEEP_RSP:
+			break;
+		case CMD_OKAY_SLEEP:
+			_dont_sleep = 0;
+			_encapsulateData(sendBuf, CMD_OKAY_SLEEP_RSP, _dont_sleep, 0, 0, 0);
+			if(uartSend != NULL) uartSend(sendBuf, 8);
+			break;
+		case CMD_OKAY_SLEEP_RSP:
+			break;
 		default:
 			break;
+		}
+		
+		if(_dont_sleep)
+		{
+			pending_sleep_flag |= PENDING_SLEEP_UART;
+		}
+		else
+		{
+			pending_sleep_flag &= ~PENDING_SLEEP_UART;
 		}
 #elif _ROLE == DVR_RECORDER
 #else
