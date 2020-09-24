@@ -268,11 +268,20 @@ void doAdcThings()
 
 void doSwitchingThings(void)
 {
+	if(vacc_volt >= vacc_threshold)
+	{
+		tx2_timeout = 30;
+	}
+	
 	if(isRelayOn())
 	{
 		if(vacc_volt < vacc_threshold || vbat_volt < vbat_threshold)
 		{
-			if(tx2_timeout == 0) relayOff();
+			if(tx2_timeout == 0)
+			{
+				relayOff();
+				pending_sleep_flag &= ~PENDING_SLEEP_UART;
+			}
 		}
 	}
 	else
