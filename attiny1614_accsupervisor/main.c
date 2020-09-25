@@ -39,7 +39,7 @@ uint16_t vbat_threshold = 588;
 // Accessory power detection threshold, default: 10.5v (588)
 uint16_t vacc_threshold = 588;
 
-volatile uint8_t tx2_timeout = TX2_TIMEOUT_SEC;
+volatile uint8_t tx2_timeout = 0;
 uint8_t pending_sleep_flag = 0 & PENDING_SLEEP_MASK;
 
 ISR(RTC_PIT_vect)
@@ -233,7 +233,6 @@ int ADC_init(void)
 
 void doAdcThings()
 {
-	pending_sleep_flag |= PENDING_SLEEP_ADC;
 	if((ADC0.COMMAND & ADC_STCONV_bm) == 0)
 	{
 		if(ADC0.INTFLAGS & ADC_RESRDY_bm)
@@ -245,7 +244,7 @@ void doAdcThings()
 				vbat_volt = ADC0.RES;
 				adc_state |= 0x1;
 			}
-			if((ADC0.MUXPOS & ADC_MUXPOS_gm) == ADC_MUXPOS_AIN2_gc)
+			else if((ADC0.MUXPOS & ADC_MUXPOS_gm) == ADC_MUXPOS_AIN2_gc)
 			{
 				// VACC
 				vacc_volt = ADC0.RES;
@@ -263,6 +262,7 @@ void doAdcThings()
 			ADC0.MUXPOS = ADC_MUXPOS_AIN1_gc;
 		}
 		ADC0.COMMAND = (1 & ADC_STCONV_bm);
+		pending_sleep_flag |= PENDING_SLEEP_ADC;
 	}
 }
 
@@ -305,6 +305,7 @@ int main(void)
 	ADC_init();
 	sei();
 	// Protocol8086 parser in action
+	// TODO: comment out. Debugging in progress
 	//stdout = &USART_stream;
 	parserInit();
 	setParseDoneCallback(NULL);
@@ -320,6 +321,7 @@ int main(void)
 		if(oldTick != currentTick)
 		{
 			oldTick = currentTick;
+			//printf("bat: %d, acc: %d, tout: %d, adcstat:%02x, sleepflag: %02x\r\n", vbat_volt, vacc_volt, tx2_timeout, adc_state, pending_sleep_flag);
 			if(isRelayOn())
 			{
 				sendCmd(CMD_HELLO, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
