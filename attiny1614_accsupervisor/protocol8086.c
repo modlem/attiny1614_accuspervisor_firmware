@@ -48,7 +48,7 @@ void _parseDone(uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4, uint
 	{
 		/* Default Command Behaviour Parser */
 #if _ROLE == PWR_MONITOR
-		tx2_timeout = 30;
+		tx2_timeout = TX2_TIMEOUT_SEC;
 		switch(data1)
 		{
 		case CMD_HELLO:

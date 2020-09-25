@@ -39,13 +39,14 @@ uint16_t vbat_threshold = 588;
 // Accessory power detection threshold, default: 10.5v (588)
 uint16_t vacc_threshold = 588;
 
-volatile uint8_t tx2_timeout = 30;
+volatile uint8_t tx2_timeout = TX2_TIMEOUT_SEC;
 uint8_t pending_sleep_flag = 0 & PENDING_SLEEP_MASK;
 
 ISR(RTC_PIT_vect)
 {
 	RTC.PITINTFLAGS = RTC_PI_bm;
 	incTick();
+	if(tx2_timeout > TX2_TIMEOUT_SEC) tx2_timeout = TX2_TIMEOUT_SEC;
 	if(tx2_timeout > 0) tx2_timeout--;
 }
 
@@ -167,7 +168,6 @@ void relayOn()
 {
 	_gpio_status |= GPIO_RELAY_MASK;
 	PORTB.OUTSET |= PIN1_bm;
-	tx2_timeout = 10;
 }
 
 void relayOff()
@@ -270,7 +270,7 @@ void doSwitchingThings(void)
 {
 	if(vacc_volt >= vacc_threshold)
 	{
-		tx2_timeout = 30;
+		tx2_timeout = TX2_TIMEOUT_SEC;
 	}
 	
 	if(isRelayOn())
