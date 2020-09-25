@@ -30,10 +30,12 @@
 #define CMD_SET_THRESH		0x0d
 #define CMD_SET_THRESH_RSP	0x0e
 
+#if 0
 #define CMD_DONT_SLEEP		0x11
 #define CMD_DONT_SLEEP_RSP	0x12
 #define CMD_OKAY_SLEEP		0x13
 #define CMD_OKAY_SLEEP_RSP	0x14
+#endif
 
 #define PWR_MONITOR		1
 #define DVR_RECORDER	2

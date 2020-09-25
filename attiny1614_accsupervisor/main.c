@@ -287,7 +287,11 @@ void doSwitchingThings(void)
 	else
 	{
 		// Relay is always on if the accessory power presents
-		if(vacc_volt >= vacc_threshold) relayOn();
+		if(vacc_volt >= vacc_threshold)
+		{
+			relayOn();
+			pending_sleep_flag |= PENDING_SLEEP_UART;
+		}
 	}
 }
 
@@ -322,11 +326,11 @@ int main(void)
 		{
 			oldTick = currentTick;
 			//printf("bat: %d, acc: %d, tout: %d, adcstat:%02x, sleepflag: %02x\r\n", vbat_volt, vacc_volt, tx2_timeout, adc_state, pending_sleep_flag);
-			if(isRelayOn())
+			/*if(isRelayOn())
 			{
 				sendCmd(CMD_HELLO, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
 				pending_sleep_flag |= PENDING_SLEEP_UART;
-			}
+			}*/
 		}
 		
 		doAdcThings();
