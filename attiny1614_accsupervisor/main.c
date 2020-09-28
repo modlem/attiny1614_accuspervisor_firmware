@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
+#include <util/delay.h>
 
 #include "definitions.h"
 #include "protocol8086.h"
@@ -18,7 +19,7 @@
 // See Microchip TB3216 - Getting Started with USART for details
 // http://ww1.microchip.com/downloads/en/AppNotes/TB3216-Getting-Started-with-USART-90003216A.pdf
 // Peri.clock: 3.3MHz for 20MHz sys.clock, 2.6MHz for 16MHz sys.
-#define USART0_BAUD_RATE(BAUD_RATE) ((float)(3333333 * 64 / (16 * (float)BAUD_RATE)) + 0.5)
+#define USART0_BAUD_RATE(BAUD_RATE) ((float)(F_CPU * 64 / (16 * (float)BAUD_RATE)) + 0.5)
 #define UART_BUFLEN	32
 volatile uint8_t uart0_rbuf[UART_BUFLEN] = {0,};
 volatile uint16_t uart0_rbuf_wpnt = 0;
@@ -167,25 +168,33 @@ void USART0_sendStringSz(char *str)
 void relayOn()
 {
 	_gpio_status |= GPIO_RELAY_MASK;
-	PORTB.OUTSET |= PIN1_bm;
+	//PORTB.OUTSET |= PIN1_bm;
+	PORTB.OUT |= PIN1_bm;
+	//while((PORTB.OUT & PIN1_bm) == 0);
 }
 
 void relayOff()
 {
 	_gpio_status &= ~GPIO_RELAY_MASK;
-	PORTB.OUTCLR |= PIN1_bm;
+	//PORTB.OUTCLR |= PIN1_bm;
+	PORTB.OUT &= ~PIN1_bm;
+	//while((PORTB.OUT & PIN1_bm) == 1);
 }
 
 void adcOn()
 {
 	_gpio_status |= GPIO_ADC_MASK;
-	PORTA.OUTSET |= PIN3_bm;
+	//PORTA.OUTSET |= PIN3_bm;
+	PORTA.OUT |= PIN3_bm;
+	//while((PORTA.OUT & PIN3_bm) == 0);
 }
 
 void adcOff()
 {
 	_gpio_status &= ~GPIO_ADC_MASK;
-	PORTA.OUTCLR |= PIN3_bm;
+	//PORTA.OUTCLR |= PIN3_bm;
+	PORTA.OUT &= ~PIN3_bm;
+	//while((PORTA.OUT & PIN3_bm) == 1);
 }
 
 int isRelayOn()
@@ -350,7 +359,9 @@ int main(void)
 		if((pending_sleep_flag & PENDING_SLEEP_MASK) == 0)
 		{
 			adcOff();
+			_delay_ms(10);
 			sleep_cpu();
+			_delay_ms(10);
 			adcOn();
 		}
     }
