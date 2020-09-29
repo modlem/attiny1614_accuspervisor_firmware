@@ -168,33 +168,25 @@ void USART0_sendStringSz(char *str)
 void relayOn()
 {
 	_gpio_status |= GPIO_RELAY_MASK;
-	//PORTB.OUTSET |= PIN1_bm;
 	PORTB.OUT |= PIN1_bm;
-	//while((PORTB.OUT & PIN1_bm) == 0);
 }
 
 void relayOff()
 {
 	_gpio_status &= ~GPIO_RELAY_MASK;
-	//PORTB.OUTCLR |= PIN1_bm;
 	PORTB.OUT &= ~PIN1_bm;
-	//while((PORTB.OUT & PIN1_bm) == 1);
 }
 
 void adcOn()
 {
 	_gpio_status |= GPIO_ADC_MASK;
-	//PORTA.OUTSET |= PIN3_bm;
 	PORTA.OUT |= PIN3_bm;
-	//while((PORTA.OUT & PIN3_bm) == 0);
 }
 
 void adcOff()
 {
 	_gpio_status &= ~GPIO_ADC_MASK;
-	//PORTA.OUTCLR |= PIN3_bm;
 	PORTA.OUT &= ~PIN3_bm;
-	//while((PORTA.OUT & PIN3_bm) == 1);
 }
 
 int isRelayOn()
@@ -277,9 +269,33 @@ void doAdcThings()
 
 void doSwitchingThings(void)
 {
+	static uint8_t lastWatchdogTick = 255;
+	static uint8_t watchdogEngaged = 0;
+	
 	if(vacc_volt >= vacc_threshold)
 	{
+		#if 0
+		if(tx2_timeout == 0)
+		{
+			if(watchdogEngaged == 0)
+			{
+				lastWatchdogTick = getCurrentTick();
+				relayOff();
+				watchdogEngaged = 1;
+			}
+			else
+			{
+				if(lastWatchdogTick != getCurrentTick())
+				{
+					relayOn();
+					watchdogEngaged = 0;
+					tx2_timeout = TX2_TIMEOUT_SEC;
+				}
+			}
+		}
+		#else
 		tx2_timeout = TX2_TIMEOUT_SEC;
+		#endif
 	}
 	
 	if(isRelayOn())
@@ -296,7 +312,7 @@ void doSwitchingThings(void)
 	else
 	{
 		// Relay is always on if the accessory power presents
-		if(vacc_volt >= vacc_threshold)
+		if(vacc_volt >= vacc_threshold && watchdogEngaged == 0)
 		{
 			relayOn();
 			pending_sleep_flag |= PENDING_SLEEP_UART;
@@ -307,8 +323,6 @@ void doSwitchingThings(void)
 int main(void)
 {
 	//FILE USART_stream = FDEV_SETUP_STREAM(USART0_sendChar, NULL, _FDEV_SETUP_WRITE);
-	uint8_t oldTick = 255;
-	uint8_t currentTick;
 	
 	cli();
 	RTC_init();
@@ -330,18 +344,6 @@ int main(void)
 	// Static scheduling loop
     while (1)
     {
-		currentTick = getCurrentTick();
-		if(oldTick != currentTick)
-		{
-			oldTick = currentTick;
-			//printf("bat: %d, acc: %d, tout: %d, adcstat:%02x, sleepflag: %02x\r\n", vbat_volt, vacc_volt, tx2_timeout, adc_state, pending_sleep_flag);
-			/*if(isRelayOn())
-			{
-				sendCmd(CMD_HELLO, (uint8_t)((vbat_volt >> 8) & 0xFF), (uint8_t)(vbat_volt & 0xFF), (uint8_t)((vacc_volt >> 8) & 0xFF), (uint8_t)(vacc_volt & 0xFF));
-				pending_sleep_flag |= PENDING_SLEEP_UART;
-			}*/
-		}
-		
 		doAdcThings();
 		if((adc_state & 0x3) == 0x3)
 		{
